@@ -1,3 +1,4 @@
+import Head from "next/head";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { io } from "socket.io-client";
 
@@ -247,7 +248,7 @@ export default function Home() {
 
   // Runs on load.
   useEffect(() => {
-    socket.emit('heartbeat', "bean")
+    // socket.emit('heartbeat', "bean")
     syncButtonRef.current.textContent = syncState.current ? "Sync ON" : "Sync OFF"
     if (!videoSourceRef.current.src) {
       changeVideo(defaultVideoSource, true)
@@ -256,7 +257,12 @@ export default function Home() {
 
   console.log("Page loaded.");
 
-  return (
+  return (<>
+    <Head>
+      <title>Party Viewer</title>
+      <meta name="description" content="App for synchronised video playback between devices." />
+      <link rel="icon" href="/favicon.ico" />
+    </Head>
     <div className="flex min-w-screen min-h-screen bg-gray-100 font-sans dark:bg-gray-900 text-black dark:text-white">
       <div className="h-dvh w-48 items-left bg-gray-200 dark:bg-gray-800 py-4 px-4 gap-2 flex-none flex flex-col">
         <h1 className="text-xl font-semibold leading-6 tracking-tight">Party Viewer</h1>
@@ -293,5 +299,5 @@ export default function Home() {
         <div ref={chatBoxRef} className="flex-1 py-4 px-4 bg-gray-100 dark:bg-gray-900 overflow-y-scroll" />
       </div>
     </div>
-  );
+  </>);
 }

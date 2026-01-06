@@ -40,9 +40,12 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# misc (added)
+# misc (added in current development environment, should not be synced)
 todo.md
 README-default.md
+/public/icon.png
+/public/icon-256.png
+/public/NoVideoSelected.png
 
 # test videos
 /public/videos/*
