@@ -13,7 +13,9 @@ export default function Home() {
 
   const videoRef = useRef<HTMLVideoElement>(null!);
   const videoSourceRef = useRef<HTMLSourceElement>(null!);
-  const videoTitleRef = useRef<HTMLHeadingElement>(null!);
+  // const videoTitleRef = useRef<HTMLParagraphElement>(null!);
+  // Used to have text representing current video. HTML:
+  // {loggedIn ? <p className="text-s leading-6 tracking-tight dark:text-zinc-50 flex-none">Current video: <b ref={videoTitleRef}>None</b></p> : null}
   // const chatRef = useRef<HTMLParagraphElement>(null!);
   const chatBoxRef = useRef<HTMLParagraphElement>(null!);
   const boxRef = useRef<HTMLInputElement>(null!);
@@ -64,7 +66,7 @@ export default function Home() {
     msgText.textContent = msg
     newMessage.append(msgText)
 
-    chatBoxRef.current.prepend(newMessage)
+    chatBoxRef.current.append(newMessage)
   }, [])
 
   function alertPlay() {
@@ -82,12 +84,38 @@ export default function Home() {
   const changeVideo = useCallback((newVideo: string, silent=false) => {
     videoSourceRef.current.src = newVideo
     const newVideoText = newVideo.slice(newVideo.lastIndexOf('/') + 1)
-    videoTitleRef.current.textContent = newVideoText
+    // if (videoTitleRef.current) {videoTitleRef.current.textContent = newVideoText}
     videoRef.current.load()
+    if (videoListRef.current) {
+      for (const [i, childNode] of videoListRef.current.childNodes.entries()) {
+        const editableChildNode = videoListRef.current.children.item(i)
+        if (!editableChildNode) {continue}
+        if (childNode.textContent == videoSourceRef.current.src.slice(videoSourceRef.current.src.lastIndexOf('/') + 1)) {
+          editableChildNode.classList.add("bg-gray-200", "dark:bg-gray-800", "outline")
+        } else {
+          editableChildNode.classList.remove("bg-gray-200", "dark:bg-gray-800", "outline")
+        }
+      }
+    }
     if (!silent) {
       if (alertState()) {appendChatText(user.current, color.current, ` changed the video to ${newVideoText}.`)}
     }
   }, [alertState, appendChatText])
+
+  const createVideoList = useCallback((videoList: string[]) => {
+    videoListRef.current.replaceChildren()
+    for (const videoName of videoList) {
+      const newVideoButton = document.createElement("button")
+      newVideoButton.className = "text-s hover:bg-gray-200 dark:hover:bg-gray-800 leading-5 py-2 px-4"
+      newVideoButton.onclick = function() {
+        console.log(videoName)
+        changeVideo("/videos/" + videoName)
+      }
+      newVideoButton.textContent = videoName
+
+      videoListRef.current.append(newVideoButton)
+    }
+  }, [changeVideo])
 
   const switchSync = useCallback(() => {
     const newSyncState = !syncState.current;
@@ -184,20 +212,9 @@ export default function Home() {
     })
 
     socket.on('videoList', (videoList: string[]) => {
-      videoListRef.current.replaceChildren()
-      for (const videoName of videoList) {
-        const newVideoButton = document.createElement("button")
-        newVideoButton.className = "text-s hover:bg-gray-200 dark:hover:bg-gray-800 shadow-xs leading-5 py-2"
-        newVideoButton.onclick = function() {
-          console.log(videoName)
-          changeVideo("/videos/" + videoName)
-        }
-        newVideoButton.textContent = videoName
-
-        videoListRef.current.append(newVideoButton)
-      }
+      createVideoList(videoList)
     })
-  }, [socket, appendChatText, switchSync, changeVideo])
+  }, [socket, appendChatText, switchSync, changeVideo, createVideoList])
 
   useEffect(() => {
     boxRef.current.addEventListener("keydown", function(event) {
@@ -255,6 +272,12 @@ export default function Home() {
     }
   }, [socket, changeVideo])
 
+  // Runs on unload.
+  useEffect(() => window.addEventListener("beforeunload", () => {
+    socket.emit("logOut", user.current, color.current)
+    socket.disconnect()
+  }), [socket])
+
   console.log("Page loaded.");
 
   return (<>
@@ -268,35 +291,32 @@ export default function Home() {
         <h1 className="text-xl font-semibold leading-6 tracking-tight">Party Viewer</h1>
         <p className="text-s"><bdi ref={loginStateTextRef}>Not logged in</bdi><b ref={userTextRef} />.</p>
         <hr />
-        <button ref={syncButtonRef} onClick={switchSync} className="text-white bg-green-600 hover:bg-green-400 shadow-xs leading-5 text-s px-4 py-2.5"/>
-        {loggedIn ? <button onClick={logOut} className="text-white bg-red-600 hover:bg-red-400 shadow-xs leading-5 text-s px-4 py-2.5">Log out</button> : null}
+        <button ref={syncButtonRef} onClick={switchSync} className="text-white bg-green-600 hover:bg-green-400 leading-5 text-s px-4 py-2.5"/>
+        {loggedIn ? <button onClick={logOut} className="text-white bg-red-600 hover:bg-red-400 leading-5 text-s px-4 py-2.5">Log out</button> : null}
         {loggedIn ? null : <hr />}
         {loggedIn ? null : <form className="flex flex-col gap-2">
           <input ref={userInputRef} className="text-s bg-gray-100 dark:bg-gray-900 placeholder-gray-500 py-2 px-2 width-full" placeholder="Username" />
           <input ref={passInputRef} className="text-s bg-gray-100 dark:bg-gray-900 placeholder-gray-500 py-2 px-2 width-full" placeholder="Password" />
           <input ref={colorInputRef} className="text-s bg-gray-100 dark:bg-gray-900 placeholder-gray-500 py-2 px-2 width-full" placeholder="Color (hex #rrggbb)" />
-          <button ref={loginButtonRef} onClick={authorise} className="text-white bg-green-600 hover:bg-green-400 shadow-xs leading-5 text-s px-4 py-2.5">Log in</button>
+          <button ref={loginButtonRef} onClick={authorise} className="text-white bg-green-600 hover:bg-green-400 leading-5 text-s px-4 py-2.5">Log in</button>
           <p ref={loginFailMessageRef} className="text-s text-red-500"/>
         </form>}
         {loggedIn ? <hr /> : null}
         {loggedIn ? <h2 className="text-l font-semibold">Video switcher:</h2> : null}
-        {loggedIn ? <div ref={videoListRef} className="flex flex-col flex-1 bg-gray-100 dark:bg-gray-900 overflow-y-scroll px-2 py-2" /> : null}
+        {loggedIn ? <div ref={videoListRef} className="flex flex-col flex-1 bg-gray-100 dark:bg-gray-900 overflow-y-scroll px-2 py-2 gap-1" /> : null}
       </div>
-      <main className="w-full justify-center py-4 px-4 sm:items-start">
-        <h1 ref={videoTitleRef} className="text-xl font-semibold leading-6 tracking-tight dark:text-zinc-50"/>
-        <div className="py-2"></div>
-        <div className="justify-center text-center sm:items-start sm:text-left">
-          <video ref={videoRef} controls={loggedIn} preload="auto" playsInline={true} onPlay={alertPlay} onPause={alertPause} onSeeked={alertSeek}>
-            <source ref={videoSourceRef} />
-            Your browser does not support the video tag.
-          </video>
-        </div>
+      <main className="w-full h-screen flex flex-col justify-center py-4 px-4 items-center text-center gap-2">
+        <hr className="flex-none" />
+        <video ref={videoRef} controls={loggedIn} preload="auto" playsInline={true} onPlay={alertPlay} onPause={alertPause} onSeeked={alertSeek} className="flex-1 w-full h-full">
+          <source ref={videoSourceRef} />
+          Your browser does not support the video tag.
+        </video>
       </main>
       <div className="h-dvh w-96 bg-gray-200 dark:bg-gray-800 py-4 px-4 flex-none flex flex-col gap-2 justify-stretch">
         <h1 className="text-xl font-semibold leading-6 tracking-tight text-black dark:text-zinc-50 flex-none">Chat</h1>
         <hr/>
+        <div ref={chatBoxRef} className="flex-1 py-4 px-4 bg-gray-100 dark:bg-gray-900 overflow-y-scroll flex flex-col justify-end" />
         <input ref={boxRef} className="text-s px-2 py-2 width-full placeholder-gray-500 bg-gray-100 dark:bg-gray-900 flex-none" placeholder="Message" />
-        <div ref={chatBoxRef} className="flex-1 py-4 px-4 bg-gray-100 dark:bg-gray-900 overflow-y-scroll" />
       </div>
     </div>
   </>);

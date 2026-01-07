@@ -2,22 +2,27 @@ import { DefaultEventsMap, Server, Socket } from "socket.io";
 import fs from "fs";
 import path from "path";
 
-// const color_map = Object({
-//     "red": "#ff0000",
-//     "orange": "#ff9900",
-//     "yellow": "#ffff00",
-//     "lime": "#99ff00",
-//     "green": "#00ff00",
-//     "cyan": "#00ffff",
-//     "blue": "#0000ff",
-//     "purple": "#9900ff",
-//     "pink": "#ff00ff",
-//     "gray": "#aaaaaa",
-//     "grey": "#aaaaaa",
-//     "black": "#000000",
-//     "white": "#ffffff",
-//     "brown": "#994400"
-// })
+// ansi and tLog can be moved to separate files, or replaced with a library. I will not do this.
+
+const ansi = Object({
+    "null": "\u001b[0m",
+    "bold": "\u001b[1m",
+    "faint": "\u001b[2m",
+    "italic": "\u001b[3m",
+    "underline": "\u001b[4m",
+    "black": "\u001b[30m",
+    "red": "\u001b[31m",
+    "green": "\u001b[32m",
+    "yellow": "#\u001b[33m",
+    "blue": "\u001b[34m",
+    "magenta": "\u001b[35m",
+    "cyan": "\u001b[36m",
+    "white": "\u001b[37m",
+})
+
+function tLog(msg_head: string,  msg: string, tail: string = "", msg_head_color_escape: string = ansi["bold"], msg_color_escape: string = "") {
+    console.log(`${ansi["faint"]}[${new Date().toLocaleTimeString()}]${ansi["null"]} ${msg_head_color_escape}${msg_head}${ansi["null"]}: ${msg_color_escape}${msg}${ansi["null"]} ${ansi["faint"]}${tail}${ansi["null"]}`)
+}
 
 const defaultColours = ["red", "orange", "yellow", "lime", "green", "cyan", "blue", "purple", "pink", "gray", "brown"]
 
@@ -28,9 +33,9 @@ async function getVideoList() {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export default function handler(_req: never, res: any) {
+export default function handler(_req: any, res: any) {
     if (!res.socket.server.io) {
-        console.log("> Starting server...")
+        tLog('info', "Starting server...")
 
         const io = new Server(res.socket.server);
         res.socket.server.io = io
@@ -45,13 +50,13 @@ export default function handler(_req: never, res: any) {
         const blockedUsernames: string[] = []
 
         io.on('connection', (socket) => {
-            console.log(`connected: socket=${socket.id}.`);
+            tLog('connected', `socket=${socket.id}.`);
 
             // Simple heartbeat function
-            socket.on('heartbeat', (msg) => {socket.emit('heartbeat', msg); console.log(`heartbeat: socket=${socket.id}`)})
+            socket.on('heartbeat', (msg) => {socket.emit('heartbeat', msg); tLog('heartbeat', `(socket=${socket.id})`)})
 
             socket.on('clientInfo', (newUser, newPass, newColor, failed, passthroughFailMessage) => {
-                console.log(`clientInfo: user=${newUser}, pass=${newPass}, color=${newColor}`)
+                tLog('clientInfo', `user=${newUser}, pass=${newPass}, color=${newColor}`)
 
                 // Map colors: if left blank, a random color is generated
                 if (!newColor.length) {
@@ -91,13 +96,13 @@ export default function handler(_req: never, res: any) {
                     // Authorise client and add listeners (workaround for if a client logs back in after logging out)
                     if (authorisedClients.indexOf(socket) == -1) {
                         authorisedClients.push(socket)
-                        console.log(`authorised: user=${newUser}, color=${newColor}, socket=${socket.id}.`);
+                        tLog('clientAuthorised (sent)', `user=${newUser}`, `(socket=${socket.id}).`, ansi["underline"]);
 
                         // Relay chat messages
                         socket.on('chatMessage', (msg, user, color) => {
                             if (loggedInClients.indexOf(socket) == -1) {return}
 
-                            console.log(`chatMessage: ${user}: ${msg} (socket=${socket.id})`)
+                            tLog('chatMessage', `${user}: ${msg}`, `(socket=${socket.id})`, ansi["bold"], ansi["magenta"])
                             for (const client of loggedInClients) {
                                 client.emit('chatControl', user, color, msg)
                             }
@@ -107,7 +112,7 @@ export default function handler(_req: never, res: any) {
                         socket.on('videoState', (paused, pos, path, silent, user, color) => {
                             if (loggedInClients.indexOf(socket) == -1) {return}
 
-                            console.log(`videoState: user=${user}, paused=${paused}, position=${pos}, path=${path}, silent=${silent}`)
+                            tLog('videoState', `user=${user}, paused=${paused}, position=${pos}, path=${path}, silent=${silent}`, `(socket=${socket.id})`)
                             for (const client of loggedInClients) {
                                 if (client != socket) {
                                     client.emit('videoControl', paused, pos, path, user, color, silent)
@@ -119,7 +124,7 @@ export default function handler(_req: never, res: any) {
                         socket.on('stateRequest', (user) => {
                             if (loggedInClients.indexOf(socket) == -1) {return}
 
-                            console.log(`stateRequest: user=${user}`)
+                            tLog('stateRequest', `user=${user}`, `(socket=${socket.id})`)
                             for (const client of loggedInClients) {
                                 if (client != socket) {
                                     client.emit('requestState')
@@ -131,7 +136,7 @@ export default function handler(_req: never, res: any) {
                         socket.on('videoListRequest', (user) => {
                             if (loggedInClients.indexOf(socket) == -1) {return}
 
-                            console.log(`videoListRequest: user=${user}`)
+                            tLog('videoListRequest', `user=${user}`, `(socket=${socket.id})`)
                             const videoListPromise = getVideoList()
                             videoListPromise.then((videoList) => socket.emit('videoList', videoList))
                         })
@@ -140,6 +145,7 @@ export default function handler(_req: never, res: any) {
                         socket.on('logOut', (user, color) => {
                             if (loggedInClients.indexOf(socket) == -1) {return}
                             
+                            tLog('logOut', `user=${user}`, `(socket=${socket.id})`)
                             for (const client of loggedInClients) {
                                 client.emit('userLeft', user, color)
                             }
@@ -152,7 +158,10 @@ export default function handler(_req: never, res: any) {
                             success = false
                         })
                     }
-                } else {socket.emit('clientRejected', failMessage)}
+                } else {
+                    tLog('clientRejected (sent)', `user=${newUser}, message=\"${failMessage}\"`, `(socket=${socket.id}).`, ansi["underline"]);
+                    socket.emit('clientRejected', failMessage)
+                }
             })
         });
     }

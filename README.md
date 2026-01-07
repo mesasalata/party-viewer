@@ -4,7 +4,7 @@ A web application for remote viewing of the same video from multiple locations.
 
 ## User guide
 
-After installing the program, run ```npm``` in the project directory to install all dependencies.
+After installing the program, run ```npm install``` in the project directory to install all dependencies.
 
 ```.env``` contains a ```SERVER_PASS``` variable, which is the password users will need to use in order to log in to the app. Change this before running the application.
 
@@ -18,3 +18,4 @@ This project is premature in its implementation, and thus has some major vulnera
 
 - All data is sent over HTTP as plain text.
 - Any user can impersonate any other user by sending requests under their name.
+- New files added during runtime are not viewable until the app is rerun.
