@@ -1,0 +1,3 @@
+# ignore test video files on commit
+*
+!.gitignore

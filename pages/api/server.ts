@@ -60,13 +60,8 @@ export default function handler(_req: any, res: any) {
 
                 // Map colors: if left blank, a random color is generated
                 if (!newColor.length) {
-                    // color = Object.keys(color_map)[Math.floor(Math.random() * Object.keys(color_map).length)];
                     newColor = defaultColours[Math.floor(Math.random() * defaultColours.length)];
                 }
-                // used to check for !color.slice(1).split('').every((char) => {return "0123456789abcdef".indexOf(char) != -1}) || (color.length != 4 && color.length != 7 && color.length != 9)
-                // if (Object.hasOwn(color_map, color)) {
-                //     color = color_map[color]
-                // }
 
                 // Check for failure; if so, generate a message
                 let failMessage = ""
@@ -79,6 +74,8 @@ export default function handler(_req: any, res: any) {
                     failMessage = "Empty username."
                 } else if (blockedUsernames.indexOf(newUser) != -1) {
                     failMessage = "Username already in use."
+                } else if (newUser.length > 200) {
+                    failMessage = "Username too long (>200 characters)"
                 } else {success = true}
 
                 if (success) {
@@ -138,7 +135,10 @@ export default function handler(_req: any, res: any) {
 
                             tLog('videoListRequest', `user=${user}`, `(socket=${socket.id})`)
                             const videoListPromise = getVideoList()
-                            videoListPromise.then((videoList) => socket.emit('videoList', videoList))
+                            videoListPromise.then((videoList) => {
+                                videoList = videoList.filter(item => (!item.endsWith(".gitignore")))
+                                socket.emit('videoList', videoList)
+                            })
                         })
 
                         // Log out user (note that user is still in authorisedClients)
