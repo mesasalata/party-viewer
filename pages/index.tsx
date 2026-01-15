@@ -11,6 +11,9 @@ export default function Home() {
   const pass = useRef<string>("");
   const color = useRef<string>("");
   const videoPathRef = useRef<string>("");
+  const connectedUntil = useRef<number>(2 ** 60);
+  const latency = useRef<number>(0);
+  const [connected, setConnected] = useState(true);
 
   const videoRef = useRef<HTMLVideoElement>(null!);
   const videoSourceRef = useRef<HTMLSourceElement>(null!);
@@ -29,14 +32,19 @@ export default function Home() {
   const colorInputRef = useRef<HTMLInputElement>(null!);
   const loginButtonRef = useRef<HTMLButtonElement>(null!);
   const loginFailMessageRef = useRef<HTMLParagraphElement>(null!);
+  const latencyTextRef = useRef<HTMLParagraphElement>(null!);
 
   const videoListRef = useRef<HTMLDivElement>(null!);
 
-  const defaultVideoSource = "/No video selected";
+  const defaultVideoSource = "/No video selected.mp4";
   // const defaultVideoSource = "/videos/hl.mp4";
+  const heartbeatText = "lemon waffles"
 
   const syncState = useRef<boolean>(true);
   const cannotAlertUntil = useRef<number>(0);
+
+  // Why is this not builtin?
+  function sleep(ms: number) {return new Promise((r) => setTimeout(r, ms))}
 
   const alertState = useCallback(() => {
     if (Date.now() > cannotAlertUntil.current && syncState.current) {
@@ -50,9 +58,9 @@ export default function Home() {
     socket.emit('videoListRequest', user.current)
   }, [socket])
 
-  const appendChatText = useCallback((sender: string, senderColor: string, msg: string) => {
+  const appendChatMessage = useCallback((sender: string, senderColor: string, msg: string) => {
     const newMessage = document.createElement("p")
-    newMessage.className = "text-s whitespace-pre-wrap"
+    newMessage.className = "text-s whitespace-pre-wrap opacity-100 fade-slow"
 
     if (sender.length) {
       const senderText = document.createElement("b")
@@ -79,15 +87,15 @@ export default function Home() {
   }
 
   function alertPlay() {
-    if (alertState()) {appendChatText(user.current, color.current, " played the video.")}
+    if (alertState()) {appendChatMessage(user.current, color.current, " played the video.")}
   }
 
   function alertPause() {
-    if (alertState()) {appendChatText(user.current, color.current, " paused the video.")}
+    if (alertState()) {appendChatMessage(user.current, color.current, " paused the video.")}
   }
 
   function alertSeek() {
-    if (alertState()) {appendChatText(user.current, color.current, ` seeked to ${Math.round(videoRef.current.currentTime)} seconds.`)}
+    if (alertState()) {appendChatMessage(user.current, color.current, ` seeked to ${Math.floor(videoRef.current.currentTime / 60)}:${('0' + String(Math.floor(videoRef.current.currentTime) % 60)).slice(-2)}.`)}
   }
 
   const changeVideo = useCallback((newVideo: string, silent=false) => {
@@ -111,15 +119,18 @@ export default function Home() {
       }
     }
     if (!silent) {
-      if (alertState()) {appendChatText(user.current, color.current, ` changed the video to ${newVideoText}.`)}
+      if (alertState()) {appendChatMessage(user.current, color.current, ` changed the video to ${newVideoText}.`)}
     }
-  }, [alertState, appendChatText])
+  }, [alertState, appendChatMessage])
 
   const createVideoList = useCallback((videoList: string[]) => {
     videoListRef.current.replaceChildren()
     for (const videoName of videoList) {
       const newVideoButton = document.createElement("button")
       newVideoButton.className = "text-s hover:bg-gray-200 dark:hover:bg-gray-800 leading-5 py-2 px-4"
+      if (decodeURI(videoSourceRef.current.src).endsWith(videoName)) {
+        newVideoButton.classList.add("bg-gray-200", "dark:bg-gray-800", "outline")
+      }
       newVideoButton.onclick = function() {
         changeVideo("/videos/" + videoName)
       }
@@ -136,17 +147,17 @@ export default function Home() {
     if (newSyncState) {
       syncButtonRef.current.classList.replace("bg-red-600", "bg-green-600")
       syncButtonRef.current.classList.replace("hover:bg-red-400", "hover:bg-green-400")
-      appendChatText("", "", "Sync enabled.")
+      appendChatMessage("", "", "Sync enabled.")
     } else {
       syncButtonRef.current.classList.replace("bg-green-600", "bg-red-600")
       syncButtonRef.current.classList.replace("hover:bg-green-400", "hover:bg-red-400")
-      appendChatText("", "", "Sync disabled.")
+      appendChatMessage("", "", "Sync disabled.")
     }
     
     if (newSyncState) {
       socket.emit("stateRequest", user.current);
     }
-  }, [socket, appendChatText])
+  }, [socket, appendChatMessage])
 
   useEffect(() => {
     socket.on('clientAuthorised', (userColor: string) => {
@@ -167,11 +178,11 @@ export default function Home() {
     })
 
     socket.on('userJoined', (newUser: string, newUserColor: string) => {
-      appendChatText(newUser, newUserColor, " joined.")
+      appendChatMessage(newUser, newUserColor, " joined.")
     })
 
     socket.on('userLeft', (leavingUser: string, leavingUserColor: string) => {
-      appendChatText(leavingUser, leavingUserColor, " left.")
+      appendChatMessage(leavingUser, leavingUserColor, " left.")
     })
     
     socket.on('videoControl', (newPaused: boolean, newPos: number, newVideoPath: string, sender: string, senderColor: string, silent: boolean = false) => {
@@ -182,7 +193,7 @@ export default function Home() {
           let seekMessage = true
           let msg = ""
 
-          if (videoPathRef.current != newVideoPath) {
+          if (videoPathRef.current != newVideoPath || silent) {
             msg = ` changed the video to ${newVideoPath.slice(newVideoPath.lastIndexOf('/') + 1)}.`
             changeVideo(newVideoPath, true)
             seekMessage = false
@@ -201,11 +212,11 @@ export default function Home() {
             seekMessage = false
           }
           if (seekMessage) {
-            msg = ` seeked to ${Math.round(newPos)} seconds.`
+            msg = ` seeked to ${Math.floor(newPos / 60)}:${('0' + String(Math.floor(newPos) % 60)).slice(-2)}.`
           }
 
           if (!silent) {
-            appendChatText(sender, senderColor, msg)
+            appendChatMessage(sender, senderColor, msg)
           }
 
           videoRef.current.currentTime = newPos
@@ -220,13 +231,13 @@ export default function Home() {
     })
 
     socket.on('chatControl', (sender: string, senderColor: string, msg: string) => {
-      appendChatText(sender, senderColor, ": " + msg)
+      appendChatMessage(sender, senderColor, ": " + msg)
     })
 
     socket.on('videoList', (videoList: string[]) => {
       createVideoList(videoList)
     })
-  }, [socket, appendChatText, switchSync, changeVideo, createVideoList])
+  }, [socket, appendChatMessage, switchSync, changeVideo, createVideoList])
 
   useEffect(() => {
     boxRef.current.addEventListener("keydown", function(event) {
@@ -258,20 +269,58 @@ export default function Home() {
   const logOut = useCallback(() => {
     socket.emit("logOut", user.current, color.current)
     setLoggedIn(false)
-    appendChatText("", "", "You have been logged out.")
+    appendChatMessage("", "", "You have been logged out.")
     loginStateTextRef.current.textContent = "Not logged in"
     userTextRef.current.textContent = ""
-  }, [socket, appendChatText])
+  }, [socket, appendChatMessage])
+
+  useEffect(() => {
+    async function checkConnectivity() {
+      while (socket.active) {
+        socket.emit("heartbeat", heartbeatText, Date.now())
+        if (Date.now() > connectedUntil.current) {
+          setConnected(false)
+        }
+        await sleep(2000)
+      }
+    }
+    
+    socket.on("heartbeat", (msg: string, msgTime: number) => {
+      if (msg == heartbeatText) {
+        connectedUntil.current = Date.now() + 5000
+        latency.current = Date.now() - msgTime
+        if (latencyTextRef.current) {latencyTextRef.current.textContent = `Latency: ${latency.current}ms`}
+        setConnected(true)
+      }
+    })
+
+    checkConnectivity()
+  }, [socket])
+
+  useEffect(() => {
+    if (loggedIn && connected) {
+      if (latencyTextRef.current) {latencyTextRef.current.textContent = `Latency: ${latency.current}ms`}
+    }
+  }, [loggedIn, connected])
+  useEffect(() => {
+    if (!connected) {
+      appendChatMessage("Disconnected", "red", ".")
+    } else {
+      appendChatMessage("", "", "Connected.")
+    }
+  }, [connected, appendChatMessage])
 
   useEffect(() => {
     if (loggedIn) {
       requestVideoList()
+    } else {
+      videoRef.current.pause()
     }
 
     if (userInputRef.current) {userInputRef.current.value = user.current}
     if (passInputRef.current) {passInputRef.current.value = ""} // removed due to security issues
     if (colorInputRef.current) {colorInputRef.current.value = color.current}
-  }, [loggedIn, requestVideoList])
+  }, [loggedIn, requestVideoList, changeVideo])
 
   // Runs on load.
   useEffect(() => {
@@ -280,13 +329,30 @@ export default function Home() {
     if (!videoSourceRef.current.src) {
       changeVideo(defaultVideoSource, true)
     }
+    // Broken
+    // videoRef.current.addEventListener('ended', () => {
+    //   cannotAlertUntil.current = Date.now() + 500
+    // })
   }, [socket, changeVideo])
 
   // Runs on unload.
-  useEffect(() => window.addEventListener("beforeunload", () => {
+  useEffect(() => window.addEventListener('beforeunload', () => {
     socket.emit("logOut", user.current, color.current)
     socket.disconnect()
   }), [socket])
+
+  // Test
+  // useEffect(() => {
+  //   if (loggedIn) {
+  //     for (const i of chatBoxRef.current.childNodes.keys()) {
+  //       const editableChildNode = chatBoxRef.current.children.item(i)
+  //       if (editableChildNode) {
+  //         editableChildNode.classList.remove("opacity-100")
+  //         editableChildNode.classList.add("opacity-50")
+  //       }
+  //     }
+  //   }
+  // }, [loggedIn])
 
   console.log("Page loaded.");
 
@@ -296,10 +362,12 @@ export default function Home() {
       <meta name="description" content="App for synchronised video playback between devices." />
       <link rel="icon" href="/favicon.ico" />
     </Head>
-    <div className="flex min-w-screen min-h-screen bg-gray-100 font-sans dark:bg-gray-900 text-black dark:text-white">
-      <div className="h-dvh w-48 items-left bg-gray-200 dark:bg-gray-800 py-4 px-4 gap-2 flex-none flex flex-col">
+    <div className="flex min-w-screen min-h-screen bg-gray-100 font-sans text-s wrap-break-word dark:bg-gray-900 text-black dark:text-white">
+      <div className="h-dvh w-48 items-left bg-gray-200 dark:bg-gray-800 py-4 px-4 gap-2 flex-none flex flex-col overflow-y-scroll">
         <h1 className="text-xl font-semibold leading-6 tracking-tight">Party Viewer</h1>
         <p className="text-s"><bdi ref={loginStateTextRef}>Not logged in</bdi><b ref={userTextRef} />.</p>
+        {connected ? null : <b className="text-red-500">Disconnected</b>}
+        {(loggedIn && connected) ? <p ref={latencyTextRef} className="text-xs" /> : null}
         <hr />
         <button ref={syncButtonRef} onClick={switchSync} className="text-white bg-green-600 hover:bg-green-400 leading-5 text-s px-4 py-2.5"/>
         {loggedIn ? <button onClick={logOut} className="text-white bg-red-600 hover:bg-red-400 leading-5 text-s px-4 py-2.5">Log out</button> : null}
@@ -317,7 +385,7 @@ export default function Home() {
       </div>
       <main className="w-full h-screen flex flex-col justify-center py-4 px-4 items-center text-center gap-2">
         <video ref={videoRef} controls={loggedIn} preload="auto" playsInline={true} onPlay={alertPlay} onPause={alertPause} onSeeked={alertSeek} onKeyDown={videoKeyDown} className="flex-1 w-full h-full">
-          <source ref={videoSourceRef} />
+          <source ref={videoSourceRef} type="video/mp4" />
           Your browser does not support the video tag.
         </video>
       </main>
@@ -325,7 +393,7 @@ export default function Home() {
         <h1 className="text-xl font-semibold leading-6 tracking-tight text-black dark:text-zinc-50 flex-none">Chat</h1>
         <hr/>
         <div ref={chatBoxRef} className="flex-1 py-4 px-4 bg-gray-100 dark:bg-gray-900 overflow-y-scroll flex flex-col justify-end" />
-        <input ref={boxRef} className="text-s px-2 py-2 width-full placeholder-gray-500 bg-gray-100 dark:bg-gray-900 flex-none" placeholder="Message" maxLength={10000} />
+        <input ref={boxRef} className="text-s px-2 py-2 width-full placeholder-gray-500 bg-gray-100 dark:bg-gray-900 flex-none" placeholder="Message" maxLength={10000} disabled={!loggedIn} />
       </div>
     </div>
   </>);

@@ -21,7 +21,7 @@ const ansi = Object({
 })
 
 function tLog(msg_head: string,  msg: string, tail: string = "", msg_head_color_escape: string = ansi["bold"], msg_color_escape: string = "") {
-    console.log(`${ansi["faint"]}[${new Date().toLocaleTimeString()}]${ansi["null"]} ${msg_head_color_escape}${msg_head}${ansi["null"]}: ${msg_color_escape}${msg}${ansi["null"]} ${ansi["faint"]}${tail}${ansi["null"]}`)
+    console.log(`${ansi["faint"]}[${new Date().toLocaleString()}]${ansi["null"]} ${msg_head_color_escape}${msg_head}${ansi["null"]}: ${msg_color_escape}${msg}${ansi["null"]} ${ansi["faint"]}${tail}${ansi["null"]}`)
 }
 
 const defaultColours = ["red", "orange", "yellow", "lime", "green", "cyan", "blue", "purple", "pink", "gray", "brown"]
@@ -52,11 +52,14 @@ export default function handler(_req: any, res: any) {
         io.on('connection', (socket) => {
             tLog('connected', `socket=${socket.id}.`);
 
-            // Simple heartbeat function
-            socket.on('heartbeat', (msg) => {socket.emit('heartbeat', msg); tLog('heartbeat', `(socket=${socket.id})`)})
+            // Custom heartbeat function (probably wasn't supposed to make this)
+            socket.on('heartbeat', (msg, msgTime) => {
+                socket.emit('heartbeat', msg, msgTime)
+                // tLog('heartbeat', `time=${new Date(msgTime).toLocaleTimeString()}`, `(socket=${socket.id})`)
+            })
 
             socket.on('clientInfo', (newUser, newPass, newColor, failed, passthroughFailMessage) => {
-                tLog('clientInfo', `user=${newUser}, pass=${newPass}, color=${newColor}`)
+                tLog('clientInfo', `user=${newUser}, pass=${newPass}, color=${newColor}` + (failed ? ` passthroughFailMessage=${passthroughFailMessage}` : ''))
 
                 // Map colors: if left blank, a random color is generated
                 if (!newColor.length) {
