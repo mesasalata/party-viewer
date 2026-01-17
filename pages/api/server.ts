@@ -139,7 +139,10 @@ export default function handler(_req: any, res: any) {
                             tLog('videoListRequest', `user=${user}`, `(socket=${socket.id})`)
                             const videoListPromise = getVideoList()
                             videoListPromise.then((videoList) => {
-                                videoList = videoList.filter(item => (!item.endsWith(".gitignore")))
+                                videoList = videoList.filter(item => (
+                                    item.endsWith(".mkv") ||
+                                    item.endsWith(".ogg")
+                                ))
                                 socket.emit('videoList', videoList)
                             })
                         })
