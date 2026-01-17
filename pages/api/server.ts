@@ -140,7 +140,7 @@ export default function handler(_req: any, res: any) {
                             const videoListPromise = getVideoList()
                             videoListPromise.then((videoList) => {
                                 videoList = videoList.filter(item => (
-                                    item.endsWith(".mkv") ||
+                                    item.endsWith(".mp4") ||
                                     item.endsWith(".ogg")
                                 ))
                                 socket.emit('videoList', videoList)
