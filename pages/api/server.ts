@@ -1,5 +1,5 @@
 import { DefaultEventsMap, Server, Socket } from "socket.io";
-import fs from "fs";
+import { readdirSync } from "fs";
 import path from "path";
 
 // ansi and tLog can be moved to separate files, or replaced with a library. I will not do this.
@@ -27,9 +27,22 @@ function tLog(msg_head: string,  msg: string, tail: string = "", msg_head_color_
 const defaultColours = ["red", "orange", "yellow", "lime", "green", "cyan", "blue", "purple", "pink", "gray", "brown"]
 
 async function getVideoList() {
-    const videosDirectory = path.join(process.cwd(), "public", "videos");
-    const filenames = fs.readdirSync(videosDirectory);
+    const files = readdirSync(path.join(process.cwd(), "public", "videos"), {withFileTypes: true, recursive: true})
+    const filenames: string[] = []
+
+    for (const file of files) {
+        const filename = path.join(file.parentPath.slice(file.parentPath.indexOf("videos")), file.name)
+        if (file.isFile() && (filename.endsWith(".mp4") || filename.endsWith(".ogg"))) {
+            filenames.push(filename)
+        }
+    }
+
     return filenames
+}
+
+interface userData {
+    user: string,
+    color: string
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -46,11 +59,12 @@ export default function handler(_req: any, res: any) {
         // loggedInClients is a list of all clients where the listeners are active
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const loggedInClients: Socket<DefaultEventsMap, DefaultEventsMap, DefaultEventsMap, any>[] = []
-        // blockedUsernames is a list of all usernames that are in use
-        const blockedUsernames: string[] = []
+        // userData is a dictionary linking client sockets to usernames and colours, for easy reference.
+        const clientData: {[id: string]: userData} = {}
 
         io.on('connection', (socket) => {
             tLog('connected', `socket=${socket.id}.`);
+            const clientID: string = socket.id
 
             // Custom heartbeat function (probably wasn't supposed to make this)
             socket.on('heartbeat', (msg, msgTime) => {
@@ -66,6 +80,16 @@ export default function handler(_req: any, res: any) {
                     newColor = defaultColours[Math.floor(Math.random() * defaultColours.length)];
                 }
 
+                // Check if username is already in use
+                if (newUser.length) {
+                    for (const id in clientData) {
+                        if (clientData[id].user == newUser) {
+                            failed = true
+                            passthroughFailMessage = "Username already in use."
+                        }
+                    }
+                }
+
                 // Check for failure; if so, generate a message
                 let failMessage = ""
                 let success = false
@@ -75,8 +99,6 @@ export default function handler(_req: any, res: any) {
                     failMessage = "Incorrect password."
                 } else if (newUser.replace(/ /g, '').length == 0) {
                     failMessage = "Empty username."
-                } else if (blockedUsernames.indexOf(newUser) != -1) {
-                    failMessage = "Username already in use."
                 } else if (newUser.length > 200) {
                     failMessage = "Username too long (>200 characters)"
                 } else {success = true}
@@ -85,8 +107,11 @@ export default function handler(_req: any, res: any) {
                     // Log client in
                     socket.emit('clientAuthorised', newColor)
                     loggedInClients.push(socket)
-                    blockedUsernames.push(newUser)
-                    for (const client of loggedInClients) {
+
+                    // blockedUsernames.push(newUser)
+                    clientData[clientID] = {user: newUser, color: newColor}
+
+                    for (const client of loggedInClients) { // Optimise this once disconnection detection implemented
                         if (client != socket) {
                             client.emit('requestState')
                         }
@@ -99,8 +124,10 @@ export default function handler(_req: any, res: any) {
                         tLog('clientAuthorised (sent)', `user=${newUser}`, `(socket=${socket.id}).`, ansi["underline"]);
 
                         // Relay chat messages
-                        socket.on('chatMessage', (msg, user, color) => {
+                        socket.on('chatMessage', (msg) => {
                             if (loggedInClients.indexOf(socket) == -1) {return}
+                            const user = clientData[clientID].user
+                            const color = clientData[clientID].color
 
                             tLog('chatMessage', `${user}: ${msg}`, `(socket=${socket.id})`, ansi["bold"], ansi["magenta"])
                             for (const client of loggedInClients) {
@@ -109,8 +136,10 @@ export default function handler(_req: any, res: any) {
                         });
 
                         // Relay video states
-                        socket.on('videoState', (paused, pos, path, silent, user, color) => {
+                        socket.on('videoState', (paused, pos, path, silent) => {
                             if (loggedInClients.indexOf(socket) == -1) {return}
+                            const user = clientData[clientID].user
+                            const color = clientData[clientID].color
 
                             tLog('videoState', `user=${user}, paused=${paused}, position=${pos}, path=${path}, silent=${silent}`, `(socket=${socket.id})`)
                             for (const client of loggedInClients) {
@@ -121,8 +150,9 @@ export default function handler(_req: any, res: any) {
                         });
 
                         // Relay state requests
-                        socket.on('stateRequest', (user) => {
+                        socket.on('stateRequest', () => {
                             if (loggedInClients.indexOf(socket) == -1) {return}
+                            const user = clientData[clientID].user
 
                             tLog('stateRequest', `user=${user}`, `(socket=${socket.id})`)
                             for (const client of loggedInClients) {
@@ -133,23 +163,29 @@ export default function handler(_req: any, res: any) {
                         })
 
                         // Respond with video list
-                        socket.on('videoListRequest', (user) => {
+                        socket.on('videoListRequest', () => {
                             if (loggedInClients.indexOf(socket) == -1) {return}
+                            const user = clientData[clientID].user
 
                             tLog('videoListRequest', `user=${user}`, `(socket=${socket.id})`)
-                            const videoListPromise = getVideoList()
-                            videoListPromise.then((videoList) => {
-                                videoList = videoList.filter(item => (
-                                    item.endsWith(".mp4") ||
-                                    item.endsWith(".ogg")
-                                ))
+                            getVideoList().then((videoList: string[]) => {
                                 socket.emit('videoList', videoList)
                             })
                         })
 
-                        // Log out user (note that user is still in authorisedClients)
-                        socket.on('logOut', (user, color) => {
+                        socket.on('clientListRequest', () => {
                             if (loggedInClients.indexOf(socket) == -1) {return}
+                            const user = clientData[clientID].user
+
+                            tLog('clientListRequest', `user=${user}`, `(socket=${socket.id})`)
+                            socket.emit('clientList', clientData)
+                        })
+
+                        // Log out user (note that user is still in authorisedClients)
+                        socket.on('logOut', () => {
+                            if (loggedInClients.indexOf(socket) == -1) {return}
+                            const user = clientData[clientID].user
+                            const color = clientData[clientID].color
                             
                             tLog('logOut', `user=${user}`, `(socket=${socket.id})`)
                             for (const client of loggedInClients) {
@@ -158,8 +194,9 @@ export default function handler(_req: any, res: any) {
 
                             const clientIndex = loggedInClients.indexOf(socket)
                             if (clientIndex != -1) {loggedInClients.splice(clientIndex, 1)}
-                            const usernameIndex = blockedUsernames.indexOf(user)
-                            if (usernameIndex != -1) {blockedUsernames.splice(usernameIndex, 1)}
+                            clientData[clientID] = {user: "", color: ""} // I hate this
+                            // const usernameIndex = blockedUsernames.indexOf(user)
+                            // if (usernameIndex != -1) {blockedUsernames.splice(usernameIndex, 1)}
 
                             success = false
                         })

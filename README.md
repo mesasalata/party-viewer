@@ -17,5 +17,4 @@ To run the application, use ```npm run build``` followed by ```npm run start```.
 This project is premature in its implementation, and thus has some major vulnerabilities:
 
 - All data is sent over HTTP as plain text.
-- Any user can impersonate any other user by sending requests under their name.
-- New files added during runtime are not viewable until the app is rerun.
+- New files added during runtime are not viewable until the app is rerun (unless ```npm run dev``` is used).

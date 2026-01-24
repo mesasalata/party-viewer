@@ -1,6 +1,21 @@
 import Head from "next/head";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { RefObject, useCallback, useEffect, useRef, useState } from "react";
 import { io } from "socket.io-client";
+
+
+// idk how to implement components in pages router and can't be bothered to check yet
+function fInput(ref: RefObject<HTMLInputElement>, placeholder: string = "", maxLength: number = 200, disabled: boolean = false) {
+  return <input ref={ref} className="text-s bg-gray-100 dark:bg-gray-900 placeholder-gray-500 py-2 px-2 width-full rounded-md" placeholder={placeholder} maxLength={maxLength} disabled={disabled}/>
+}
+
+// function fButton(ref: RefObject<HTMLButtonElement>, text: string, onClick: VoidFunction, bg: string = "bg-green-600", bgHover: string = "bg-green-400") {
+//   return <button ref={ref} onClick={onClick} className={`${bg} ${bgHover} leading-5 text-s px-4 py-2.5 rounded-md`}>{text}</button>
+// }
+
+interface userData {
+  user: string,
+  color: string
+}
 
 export default function Home() {
   // Warning: Editing and saving this file breaks the site. Restart the process to fix.
@@ -53,15 +68,18 @@ export default function Home() {
 
   const alertState = useCallback(() => {
     if (Date.now() > cannotAlertUntil.current && syncState.current) {
-      socket.emit("videoState", videoRef.current.paused, videoRef.current.currentTime, videoPathRef.current, false, user.current, color.current)
+      socket.emit("videoState", videoRef.current.paused, videoRef.current.currentTime, videoPathRef.current, false)
       return true
     }
     return false
   }, [socket])
 
-  const requestVideoList = useCallback(() => {
-    socket.emit('videoListRequest', user.current)
-  }, [socket])
+  function fadeMessage(messageNode: HTMLParagraphElement) {
+    if (messageNode) {
+      messageNode.classList.remove("opacity-100")
+      messageNode.classList.add("opacity-50")
+    }
+  }
 
   const appendChatMessage = useCallback((sender: string, senderColor: string, msg: string) => {
     const newMessage = document.createElement("p")
@@ -77,8 +95,9 @@ export default function Home() {
     const msgText = document.createElement("bdi")
     msgText.textContent = msg
     newMessage.append(msgText)
+    setTimeout(fadeMessage, 2000, newMessage)
 
-    chatBoxRef.current.append(newMessage)
+    chatBoxRef.current.prepend(newMessage)
   }, [])
 
   function videoKeyDown(e: React.KeyboardEvent<HTMLVideoElement>) {
@@ -133,14 +152,14 @@ export default function Home() {
     videoListRef.current.replaceChildren()
     for (const videoName of videoList) {
       const newVideoButton = document.createElement("button")
-      newVideoButton.className = "text-s hover:bg-gray-200 dark:hover:bg-gray-800 leading-5 py-2 px-4"
+      newVideoButton.className = "text-s hover:bg-gray-200 dark:hover:bg-gray-800 leading-5 py-2 px-4 rounded-md"
       if (decodeURI(videoPathRef.current).endsWith(videoName)) {
         newVideoButton.classList.add("bg-gray-200", "dark:bg-gray-800", "outline")
       }
       newVideoButton.onclick = function() {
-        changeVideo("/videos/" + videoName)
+        changeVideo(videoName)
       }
-      newVideoButton.textContent = videoName
+      newVideoButton.textContent = videoName.slice(videoName.lastIndexOf('/') + 1)
 
       videoListRef.current.append(newVideoButton)
     }
@@ -161,7 +180,7 @@ export default function Home() {
     }
     
     if (newSyncState) {
-      socket.emit("stateRequest", user.current);
+      socket.emit("stateRequest");
     }
   }, [socket, appendChatMessage])
 
@@ -256,7 +275,7 @@ export default function Home() {
 
     socket.on("requestState", () => {
       if (videoRef.current && syncState.current) {
-        socket.emit('videoState', videoRef.current.paused, videoRef.current.currentTime, videoPathRef.current, true, user.current, color.current)
+        socket.emit('videoState', videoRef.current.paused, videoRef.current.currentTime, videoPathRef.current, true)
       }
     })
 
@@ -267,12 +286,35 @@ export default function Home() {
     socket.on('videoList', (videoList: string[]) => {
       createVideoList(videoList)
     })
+
+    socket.on('clientList', (clientList: {[id: string]: userData}) => {
+      const idList = Object.keys(clientList).filter((id) => clientList[id].user.length > 0)
+      const userCount = idList.length
+      if (userCount >= 2) {
+        appendChatMessage("Connected clients:", "white", "")
+      }
+      if (userCount < 10) {
+        for (const id of idList) {
+          if (clientList[id].user != user.current) {
+            appendChatMessage(clientList[id].user, clientList[id].color, "")
+          }
+        }
+      } else {
+        const clientNames: Array<string> = [];
+        for (const id of idList) {
+          if (clientList[id].user != user.current) {
+            clientNames.push(clientList[id].user)
+          }
+        }
+        appendChatMessage(clientNames.join(", "), "orange", "")
+      }
+    })
   }, [socket, appendChatMessage, switchSync, changeVideo, createVideoList, checkControlEnable])
 
   useEffect(() => {
     boxRef.current.addEventListener("keydown", function(event) {
       if (event.key == "Enter") {
-        socket.emit('chatMessage', boxRef.current.value, user.current, color.current)
+        socket.emit('chatMessage', boxRef.current.value)
         boxRef.current.value = ""
       }
     })
@@ -332,6 +374,7 @@ export default function Home() {
       if (latencyTextRef.current) {latencyTextRef.current.textContent = `Latency: ${latency.current}ms`}
     }
   }, [loggedIn, connected])
+
   useEffect(() => {
     if (!connected) {
       appendChatMessage("Disconnected", "red", ".")
@@ -342,7 +385,8 @@ export default function Home() {
 
   useEffect(() => {
     if (loggedIn) {
-      requestVideoList()
+      socket.emit('videoListRequest')
+      socket.emit('clientListRequest')
     } else {
       videoRef.current.pause()
     }
@@ -350,7 +394,7 @@ export default function Home() {
     if (userInputRef.current) {userInputRef.current.value = user.current}
     if (passInputRef.current) {passInputRef.current.value = ""} // removed due to security issues
     if (colorInputRef.current) {colorInputRef.current.value = color.current}
-  }, [loggedIn, requestVideoList, changeVideo])
+  }, [loggedIn, socket, changeVideo])
 
   // Runs on load.
   useEffect(() => {
@@ -367,24 +411,13 @@ export default function Home() {
 
   // Runs on unload.
   useEffect(() => window.addEventListener('beforeunload', () => {
-    socket.emit("logOut", user.current, color.current)
+    socket.emit("logOut")
     socket.disconnect()
   }), [socket])
 
-  // Test
-  // useEffect(() => {
-  //   if (loggedIn) {
-  //     for (const i of chatBoxRef.current.childNodes.keys()) {
-  //       const editableChildNode = chatBoxRef.current.children.item(i)
-  //       if (editableChildNode) {
-  //         editableChildNode.classList.remove("opacity-100")
-  //         editableChildNode.classList.add("opacity-50")
-  //       }
-  //     }
-  //   }
-  // }, [loggedIn])
-
   console.log("Page loaded.");
+
+  // justify-end-safe
 
   return (<>
     <Head>
@@ -392,8 +425,8 @@ export default function Home() {
       <meta name="description" content="App for synchronised video playback between devices." />
       <link rel="icon" href="/favicon.ico" />
     </Head>
-    <div className="flex min-w-screen min-h-screen bg-gray-100 font-sans text-s wrap-break-word dark:bg-gray-900 text-black dark:text-white">
-      <div className="h-dvh w-48 items-left bg-gray-200 dark:bg-gray-800 py-4 px-4 gap-2 flex-none flex flex-col overflow-y-scroll">
+    <div className="flex min-w-screen min-h-screen bg-gray-100 font-sans text-s wrap-break-word dark:bg-gray-900 text-black dark:text-white overflow-hidden">
+      <div className="h-dvh w-48 items-left bg-gray-200 dark:bg-gray-800 py-4 px-4 gap-2 flex-none flex flex-col overflow-y-scroll no-scrollbar-chrome">
         <h1 className="text-xl font-semibold leading-6 tracking-tight">Party Viewer</h1>
         <p className="text-s"><bdi ref={loginStateTextRef}>Not logged in</bdi><b ref={userTextRef} />.</p>
         {connected ? null : <p><b className="text-red-500">Disconnected</b>.</p>}
@@ -403,15 +436,15 @@ export default function Home() {
         {loggedIn ? <button onClick={logOut} className="bg-red-600 hover:bg-red-400 leading-5 text-s px-4 py-2.5 rounded-md">Log out</button> : null}
         {loggedIn ? null : <hr />}
         {loggedIn ? null : <form className="flex flex-col gap-2">
-          <input ref={userInputRef} className="text-s bg-gray-100 dark:bg-gray-900 placeholder-gray-500 py-2 px-2 width-full rounded-md" placeholder="Username" maxLength={200}/>
-          <input ref={passInputRef} className="text-s bg-gray-100 dark:bg-gray-900 placeholder-gray-500 py-2 px-2 width-full rounded-md" placeholder="Password" maxLength={200} />
-          <input ref={colorInputRef} className="text-s bg-gray-100 dark:bg-gray-900 placeholder-gray-500 py-2 px-2 width-full rounded-md" placeholder="Color (hex #rrggbb)" maxLength={200} />
+          {fInput(userInputRef, "Username", 200)}
+          {fInput(passInputRef, "Password", 200)}
+          {fInput(colorInputRef, "Color (hex #rrggbb)", 200)}
           <button ref={loginButtonRef} onClick={authorise} className="bg-green-600 hover:bg-green-400 leading-5 text-s px-4 py-2.5 rounded-md">Log in</button>
           <p ref={loginFailMessageRef} className="text-s text-red-500"/>
         </form>}
         {loggedIn ? <hr /> : null}
         {loggedIn ? <h2 className="text-l font-semibold">Video switcher:</h2> : null}
-        {loggedIn ? <div ref={videoListRef} className="flex flex-col flex-1 bg-gray-100 dark:bg-gray-900 overflow-y-scroll px-2 py-2 gap-1 rounded-md" /> : null}
+        {loggedIn ? <div ref={videoListRef} className="flex flex-col flex-1 bg-gray-100 dark:bg-gray-900 overflow-y-scroll px-2 py-2 gap-1 rounded-md no-scrollbar-chrome" /> : null}
       </div>
       <main className="w-full h-screen flex flex-col justify-center py-4 px-4 items-center text-center gap-2">
         <video ref={videoRef} controls={loggedIn && !controlLocked} preload="auto" playsInline={true} onPlay={alertPlay} onPause={alertPause} onSeeked={alertSeek} onKeyDown={videoKeyDown} className="flex-1 w-full h-full rounded-md">
@@ -422,8 +455,8 @@ export default function Home() {
       <div className="h-dvh w-96 bg-gray-200 dark:bg-gray-800 py-4 px-4 flex-none flex flex-col gap-2 justify-stretch">
         <h1 className="text-xl font-semibold leading-6 tracking-tight text-black dark:text-zinc-50 flex-none">Chat</h1>
         <hr/>
-        <div ref={chatBoxRef} className="flex-1 py-4 px-4 bg-gray-100 dark:bg-gray-900 overflow-y-scroll flex flex-col justify-end rounded-md" />
-        <input ref={boxRef} className="text-s px-2 py-2 width-full placeholder-gray-500 bg-gray-100 dark:bg-gray-900 flex-none rounded-md" placeholder="Message" maxLength={10000} disabled={!loggedIn} />
+        <div ref={chatBoxRef} className="flex-1 py-4 px-4 bg-gray-100 dark:bg-gray-900 overflow-y-scroll flex flex-col-reverse h-full rounded-md no-scrollbar-chrome" />
+        {fInput(boxRef, loggedIn ? "Message..." : "Login to send messages.", 10000, !loggedIn)}
       </div>
     </div>
   </>);
