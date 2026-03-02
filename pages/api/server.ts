@@ -1,8 +1,12 @@
 import { DefaultEventsMap, Server, Socket } from "socket.io";
 import { readdirSync } from "fs";
 import path from "path";
+// import { FileHandle, open } from "fs/promises";
+// import { O_CREAT } from "constants";
 
 // ansi and tLog can be moved to separate files, or replaced with a library. I will not do this.
+// let logFile: FileHandle | null = null;
+// USE A FRAMEWORK YOU MORON
 
 const ansi = Object({
     "null": "\u001b[0m",
@@ -21,7 +25,11 @@ const ansi = Object({
 })
 
 function tLog(msg_head: string,  msg: string, tail: string = "", msg_head_color_escape: string = ansi["bold"], msg_color_escape: string = "") {
-    console.log(`${ansi["faint"]}[${new Date().toLocaleString()}]${ansi["null"]} ${msg_head_color_escape}${msg_head}${ansi["null"]}: ${msg_color_escape}${msg}${ansi["null"]} ${ansi["faint"]}${tail}${ansi["null"]}`)
+    const logText = `${ansi["faint"]}[${new Date().toLocaleString()}]${ansi["null"]} ${msg_head_color_escape}${msg_head}${ansi["null"]}: ${msg_color_escape}${msg}${ansi["null"]} ${ansi["faint"]}${tail}${ansi["null"]}`
+    console.log(logText)
+    // if (logFile) {
+        // logFile.write(logText + "\n")
+    // }
 }
 
 const defaultColours = ["red", "orange", "yellow", "lime", "green", "cyan", "blue", "purple", "pink", "gray", "brown"]
@@ -42,32 +50,74 @@ async function getVideoList() {
 
 interface userData {
     user: string,
-    color: string
+    color: string,
+    lastHeartbeat: number
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export default function handler(_req: any, res: any) {
     if (!res.socket.server.io) {
+        // const logFilePath = path.join(process.cwd(), "logs", new Date().toLocaleTimeString() + ".log")
+        // open(logFilePath, O_CREAT).then((file: FileHandle) => {logFile = file})
         tLog('info', "Starting server...")
 
         const io = new Server(res.socket.server);
         res.socket.server.io = io
 
-        // authorisedClients is a list of all clients that have listeners already created
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const authorisedClients: Socket<DefaultEventsMap, DefaultEventsMap, DefaultEventsMap, any>[] = []
+        // authorisedClients is a list of all client IDs that have listeners already created.
+        const authorisedClients: string[] = []
         // loggedInClients is a list of all clients where the listeners are active
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const loggedInClients: Socket<DefaultEventsMap, DefaultEventsMap, DefaultEventsMap, any>[] = []
-        // userData is a dictionary linking client sockets to usernames and colours, for easy reference.
+        // clientData is a dictionary linking client sockets to usernames and colours, for easy reference.
         const clientData: {[id: string]: userData} = {}
+        // connectedClients is a list of the IDs of all connected sockets.
+        let connectedClients: string[] = []
+        let updatedClients: string[] = []
+
+        function checkConnectivity() {
+            const newConnectedClients: string[] = []
+            const currentTime = Date.now()
+            for (const id of connectedClients) {
+                if (clientData[id].color == "") {continue}
+                if (currentTime - clientData[id].lastHeartbeat < 10000) {
+                    newConnectedClients.push(id)
+                } else {
+                    if (clientData[id].color != "") {
+                        for (const client of loggedInClients) {
+                            client.emit('userDisconnect', clientData[id].user, clientData[id].color)
+                        }
+                    }
+                }
+            }
+            for (const id of updatedClients) {
+                if (newConnectedClients.indexOf(id) == -1) {
+                    newConnectedClients.push(id)
+                    if (clientData[id].color != "") {
+                        for (const client of loggedInClients) {
+                            client.emit('userReconnect', clientData[id].user, clientData[id].color)
+                        }
+                    }
+                }
+            }
+            updatedClients = []
+            connectedClients = newConnectedClients
+            setTimeout(checkConnectivity, 2000)
+        }
+        checkConnectivity()
 
         io.on('connection', (socket) => {
             tLog('connected', `socket=${socket.id}.`);
             const clientID: string = socket.id
+            clientData[clientID] = {user: "", color: "", lastHeartbeat: Date.now()}
+            connectedClients.push(clientID)
 
             // Custom heartbeat function (probably wasn't supposed to make this)
             socket.on('heartbeat', (msg, msgTime) => {
+                if (updatedClients.indexOf(clientID) == -1) {
+                    updatedClients.push(clientID)
+                }
+                clientData[clientID].lastHeartbeat = Date.now()
                 socket.emit('heartbeat', msg, msgTime)
                 // tLog('heartbeat', `time=${new Date(msgTime).toLocaleTimeString()}`, `(socket=${socket.id})`)
             })
@@ -109,18 +159,23 @@ export default function handler(_req: any, res: any) {
                     loggedInClients.push(socket)
 
                     // blockedUsernames.push(newUser)
-                    clientData[clientID] = {user: newUser, color: newColor}
+                    if (Object.keys(clientData).indexOf(clientID) == -1) {
+                        clientData[clientID] = {user: newUser, color: newColor, lastHeartbeat: Date.now()}
+                    } else {
+                        clientData[clientID].user = newUser
+                        clientData[clientID].color = newColor
+                    }
 
-                    for (const client of loggedInClients) { // Optimise this once disconnection detection implemented
-                        if (client != socket) {
+                    for (const client of loggedInClients) {
+                        if (client != socket && connectedClients.indexOf(client.id) != -1) {
                             client.emit('requestState')
                         }
                         client.emit('userJoined', newUser, newColor)
                     }
 
                     // Authorise client and add listeners (workaround for if a client logs back in after logging out)
-                    if (authorisedClients.indexOf(socket) == -1) {
-                        authorisedClients.push(socket)
+                    if (authorisedClients.indexOf(socket.id) == -1) {
+                        authorisedClients.push(socket.id)
                         tLog('clientAuthorised (sent)', `user=${newUser}`, `(socket=${socket.id}).`, ansi["underline"]);
 
                         // Relay chat messages
@@ -156,7 +211,7 @@ export default function handler(_req: any, res: any) {
 
                             tLog('stateRequest', `user=${user}`, `(socket=${socket.id})`)
                             for (const client of loggedInClients) {
-                                if (client != socket) {
+                                if (client != socket && connectedClients.indexOf(client.id) != -1) {
                                     client.emit('requestState')
                                 }
                             }
@@ -178,7 +233,7 @@ export default function handler(_req: any, res: any) {
                             const user = clientData[clientID].user
 
                             tLog('clientListRequest', `user=${user}`, `(socket=${socket.id})`)
-                            socket.emit('clientList', clientData)
+                            socket.emit('clientList', connectedClients.map(a => clientData[a]))
                         })
 
                         // Log out user (note that user is still in authorisedClients)
@@ -194,7 +249,8 @@ export default function handler(_req: any, res: any) {
 
                             const clientIndex = loggedInClients.indexOf(socket)
                             if (clientIndex != -1) {loggedInClients.splice(clientIndex, 1)}
-                            clientData[clientID] = {user: "", color: ""} // I hate this
+                            clientData[clientID].user = ""
+                            clientData[clientID].color = "" // I hate this
                             // const usernameIndex = blockedUsernames.indexOf(user)
                             // if (usernameIndex != -1) {blockedUsernames.splice(usernameIndex, 1)}
 

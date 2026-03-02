@@ -165,6 +165,25 @@ export default function Home() {
     }
   }, [changeVideo])
 
+  const checkControlEnable = useCallback(() => {
+    let controlsDisabled: boolean = false;
+    if (Date.now() > cannotAlertUntil.current || !syncState.current) {
+      controlsDisabled = false
+    } else {
+      controlsDisabled = true
+    }
+
+    setControlLocked(controlsDisabled)
+    if (videoListRef.current) {
+      for (const i of videoListRef.current.childNodes.keys()) {
+        const editableChildNode: HTMLButtonElement | Element | null = videoListRef.current.children.item(i)
+        if (editableChildNode) {
+          editableChildNode.setAttribute("disabled", String(controlsDisabled))
+        }
+      }
+    }
+  }, [])
+
   const switchSync = useCallback(() => {
     const newSyncState = !syncState.current;
     syncState.current = newSyncState;
@@ -182,15 +201,8 @@ export default function Home() {
     if (newSyncState) {
       socket.emit("stateRequest");
     }
-  }, [socket, appendChatMessage])
-
-  const checkControlEnable = useCallback(() => {
-    if (Date.now() > cannotAlertUntil.current || !syncState.current) {
-      setControlLocked(false)
-    } else {
-      setControlLocked(true)
-    }
-  }, [])
+    checkControlEnable()
+  }, [socket, appendChatMessage, checkControlEnable])
 
   useEffect(() => {
     socket.on('clientAuthorised', (userColor: string) => {
@@ -249,7 +261,7 @@ export default function Home() {
           // Turn off alerts and video controls in order to prevent feedback loops and desyncs, respectively
           cannotAlertUntil.current = Date.now() + 500
           checkControlEnable()
-          setTimeout(checkControlEnable, 550)
+          setTimeout(checkControlEnable, 600)
 
           if (videoPathRef.current != newVideoPath || silent) {
             changeVideo(newVideoPath, true)
@@ -287,17 +299,23 @@ export default function Home() {
       createVideoList(videoList)
     })
 
+    socket.on('userDisconnect', (sender: string, senderColor: string) => {
+      appendChatMessage(sender, senderColor, " disconnected.")
+    })
+
+    socket.on('userReconnect', (sender: string, senderColor: string) => {
+      appendChatMessage(sender, senderColor, " reconnected.")
+    })
+
     socket.on('clientList', (clientList: {[id: string]: userData}) => {
-      const idList = Object.keys(clientList).filter((id) => clientList[id].user.length > 0)
+      const idList = Object.keys(clientList).filter((id) => (clientList[id].user.length > 0 && clientList[id].user != user.current))
       const userCount = idList.length
-      if (userCount >= 2) {
+      if (userCount >= 1) {
         appendChatMessage("Connected clients:", "white", "")
       }
       if (userCount < 10) {
         for (const id of idList) {
-          if (clientList[id].user != user.current) {
-            appendChatMessage(clientList[id].user, clientList[id].color, "")
-          }
+          appendChatMessage(clientList[id].user, clientList[id].color, "")
         }
       } else {
         const clientNames: Array<string> = [];
