@@ -79,7 +79,6 @@ export default function handler(_req: any, res: any) {
             const newConnectedClients: string[] = []
             const currentTime = Date.now()
             for (const id of connectedClients) {
-                if (clientData[id].color == "") {continue}
                 if (currentTime - clientData[id].lastHeartbeat < 10000) {
                     newConnectedClients.push(id)
                 } else {
