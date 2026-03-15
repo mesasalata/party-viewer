@@ -83,9 +83,10 @@ export default function handler(_req: any, res: any) {
                 if (currentTime - clientData[id].lastHeartbeat < 10000) {
                     newConnectedClients.push(id)
                 } else {
+                    tLog('userDisconnect', clientData[id].user ? `${clientData[id].user}` : "(not logged in)", `(socket=${id})`, ansi["bold"], ansi["magenta"])
                     if (clientData[id].color != "") {
                         for (const client of loggedInClients) {
-                            client.emit('userDisconnect', clientData[id].user, clientData[id].color)
+                            client.emit('userDisconnect', clientData[id].user ? `${clientData[id].user}` : "(not logged in)", clientData[id].color)
                         }
                     }
                 }
@@ -93,6 +94,7 @@ export default function handler(_req: any, res: any) {
             for (const id of updatedClients) {
                 if (newConnectedClients.indexOf(id) == -1) {
                     newConnectedClients.push(id)
+                    tLog('userReconnect', `${clientData[id].user}`, `(socket=${id})`, ansi["bold"], ansi["magenta"])
                     if (clientData[id].color != "") {
                         for (const client of loggedInClients) {
                             client.emit('userReconnect', clientData[id].user, clientData[id].color)

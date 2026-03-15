@@ -4,8 +4,8 @@ import { io } from "socket.io-client";
 
 
 // idk how to implement components in pages router and can't be bothered to check yet
-function fInput(ref: RefObject<HTMLInputElement>, placeholder: string = "", maxLength: number = 200, disabled: boolean = false) {
-  return <input ref={ref} className="text-s bg-gray-100 dark:bg-gray-900 placeholder-gray-500 py-2 px-2 width-full rounded-md" placeholder={placeholder} maxLength={maxLength} disabled={disabled}/>
+function fInput(ref: RefObject<HTMLInputElement>, placeholder: string = "", maxLength: number = 200, disabled: boolean = false, hidden: boolean = false) {
+  return <input ref={ref} className={"text-s bg-gray-100 dark:bg-gray-900 placeholder-gray-500 py-2 px-2 width-full rounded-md" + (hidden == true ? " hidden" : "")} placeholder={placeholder} maxLength={maxLength} disabled={disabled}/>
 }
 
 // function fButton(ref: RefObject<HTMLButtonElement>, text: string, onClick: VoidFunction, bg: string = "bg-green-600", bgHover: string = "bg-green-400") {
@@ -22,6 +22,7 @@ export default function Home() {
   const socket = io()
 
   const [loggedIn, setLoggedIn] = useState(false);
+
   const user = useRef<string>("");
   const pass = useRef<string>("");
   const color = useRef<string>("");
@@ -49,6 +50,7 @@ export default function Home() {
   const userInputRef = useRef<HTMLInputElement>(null!);
   const passInputRef = useRef<HTMLInputElement>(null!);
   const colorInputRef = useRef<HTMLInputElement>(null!);
+  const searchRef = useRef<HTMLInputElement>(null!);
   const loginButtonRef = useRef<HTMLButtonElement>(null!);
   const loginFailMessageRef = useRef<HTMLParagraphElement>(null!);
   const latencyTextRef = useRef<HTMLParagraphElement>(null!);
@@ -82,8 +84,12 @@ export default function Home() {
   }
 
   const appendChatMessage = useCallback((sender: string, senderColor: string, msg: string) => {
+    const newMessagePad = document.createElement("div")
+    newMessagePad.className = "w-full"
+
     const newMessage = document.createElement("p")
-    newMessage.className = "text-s whitespace-pre-wrap opacity-100 fade-slow"
+    newMessage.className = "text-s whitespace-pre-wrap opacity-100 px-3 fade-slow"
+    newMessagePad.append(newMessage)
 
     if (sender.length) {
       const senderText = document.createElement("b")
@@ -94,10 +100,29 @@ export default function Home() {
     
     const msgText = document.createElement("bdi")
     msgText.textContent = msg
+
     newMessage.append(msgText)
     setTimeout(fadeMessage, 2000, newMessage)
 
-    chatBoxRef.current.prepend(newMessage)
+    const msgTime = document.createElement("bdi")
+    const date: Date = new Date()
+    msgTime.className = "opacity-50 text-xs"
+    msgTime.hidden = true
+    msgTime.textContent = "  " + ('0' + date.getHours()).slice(-2) + ":" + ('0' + date.getMinutes()).slice(-2) + ":" + ('0' + date.getSeconds()).slice(-2)
+    newMessage.append(msgTime)
+
+    newMessagePad.onmouseenter = function() {
+      newMessagePad.classList.add("bg-gray-200/50")
+      newMessagePad.classList.add("dark:bg-gray-800/50")
+      msgTime.hidden = false
+    }
+    newMessagePad.onmouseleave = function() {
+      newMessagePad.classList.remove("bg-gray-200/50")
+      newMessagePad.classList.remove("dark:bg-gray-800/50")
+      msgTime.hidden = true
+    } // box used to have py-4 px-4
+
+    chatBoxRef.current.prepend(newMessagePad)
   }, [])
 
   function videoKeyDown(e: React.KeyboardEvent<HTMLVideoElement>) {
@@ -387,6 +412,32 @@ export default function Home() {
     checkConnectivity()
   }, [socket])
 
+  const searchVideos = useCallback(() => {
+    const searchStrings = searchRef.current.value.toLowerCase().split(' ');
+    if (videoListRef.current) {
+      for (const [i, childNode] of videoListRef.current.childNodes.entries()) {
+        const editableChildNode = videoListRef.current.children.item(i)
+        if (!editableChildNode) {continue}
+        const textValue = childNode.textContent?.toLowerCase()
+
+        let includes = true
+        for (const string of searchStrings) {
+          if (textValue?.search(string) == -1) {
+            includes = false
+            break
+          }
+        }
+        if (includes) {
+          editableChildNode.classList.remove("hidden")
+        } else {
+          editableChildNode.classList.add("hidden")
+        }
+      }
+    }
+  }, [])
+
+  useEffect(() => {searchRef.current.oninput = searchVideos}, [searchVideos])
+
   useEffect(() => {
     if (loggedIn && connected) {
       if (latencyTextRef.current) {latencyTextRef.current.textContent = `Latency: ${latency.current}ms`}
@@ -462,6 +513,7 @@ export default function Home() {
         </form>}
         {loggedIn ? <hr /> : null}
         {loggedIn ? <h2 className="text-l font-semibold">Video switcher:</h2> : null}
+        {fInput(searchRef, "Search...", 10000, !loggedIn, !loggedIn)}
         {loggedIn ? <div ref={videoListRef} className="flex flex-col flex-1 bg-gray-100 dark:bg-gray-900 overflow-y-scroll px-2 py-2 gap-1 rounded-md no-scrollbar-chrome" /> : null}
       </div>
       <main className="w-full h-screen flex flex-col justify-center py-4 px-4 items-center text-center gap-2">
@@ -473,7 +525,7 @@ export default function Home() {
       <div className="h-dvh w-96 bg-gray-200 dark:bg-gray-800 py-4 px-4 flex-none flex flex-col gap-2 justify-stretch">
         <h1 className="text-xl font-semibold leading-6 tracking-tight text-black dark:text-zinc-50 flex-none">Chat</h1>
         <hr/>
-        <div ref={chatBoxRef} className="flex-1 py-4 px-4 bg-gray-100 dark:bg-gray-900 overflow-y-scroll flex flex-col-reverse h-full rounded-md no-scrollbar-chrome" />
+        <div ref={chatBoxRef} className="flex-1 bg-gray-100 dark:bg-gray-900 py-2 overflow-y-scroll flex flex-col-reverse h-full rounded-md no-scrollbar-chrome" />
         {fInput(boxRef, loggedIn ? "Message..." : "Login to send messages.", 10000, !loggedIn)}
       </div>
     </div>
