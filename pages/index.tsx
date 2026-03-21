@@ -128,9 +128,9 @@ export default function Home() {
   function videoKeyDown(e: React.KeyboardEvent<HTMLVideoElement>) {
     if (e.key == 'f') {
       if (document.fullscreenElement) {
-        document.exitFullscreen()
+        document.exitFullscreen().catch(() => {"Failed to exit fullscreen."})
       } else {
-        videoRef.current.requestFullscreen()
+        videoRef.current.requestFullscreen().catch(() => {console.log("Failed to enter fullscreen.")})
       }
     }
   }
@@ -203,7 +203,11 @@ export default function Home() {
       for (const i of videoListRef.current.childNodes.keys()) {
         const editableChildNode: HTMLButtonElement | Element | null = videoListRef.current.children.item(i)
         if (editableChildNode) {
-          editableChildNode.setAttribute("disabled", String(controlsDisabled))
+          if (!controlsDisabled) {
+            editableChildNode.removeAttribute("disabled");
+          } else {
+            editableChildNode.setAttribute("disabled", "true")
+          }
         }
       }
     }
@@ -484,9 +488,7 @@ export default function Home() {
     socket.disconnect()
   }), [socket])
 
-  console.log("Page loaded.");
-
-  // justify-end-safe
+  // console.log("Page loaded.");
 
   return (<>
     <Head>
