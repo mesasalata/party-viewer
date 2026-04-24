@@ -18,3 +18,7 @@ This project is premature in its implementation, and thus has some major vulnera
 
 - All data is sent over HTTP as plain text.
 - New files added during runtime are not viewable until the app is rerun (unless ```npm run dev``` is used).
+
+## Existing deployments
+
+Demo site hosted [here](mine.crypt.institute:3000)
