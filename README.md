@@ -21,4 +21,4 @@ This project is premature in its implementation, and thus has some major vulnera
 
 ## Existing deployments
 
-Demo site hosted at http://mine.crypt.institute:3000.
+Demo site hosted at http://mine.crypt.institute:3000 (no password).
